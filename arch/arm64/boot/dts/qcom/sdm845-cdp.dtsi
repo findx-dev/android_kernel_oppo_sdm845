@@ -69,6 +69,7 @@
 			linux,can-disable;
 		};
 
+		/*
 		cam_snapshot {
 			label = "cam_snapshot";
 			gpios = <&pm8998_gpios 7 GPIO_ACTIVE_LOW>;
@@ -88,6 +89,7 @@
 			debounce-interval = <15>;
 			linux,can-disable;
 		};
+		*/
 	};
 };
 
