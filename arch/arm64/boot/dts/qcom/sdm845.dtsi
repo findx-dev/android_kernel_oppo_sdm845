@@ -645,6 +645,16 @@
 			size = <0 0x2400000>;
 		};
 
+		ramoops: ramoops@ba000000 {
+			compatible = "ramoops";
+			reg = <0 0xba000000 0 0x00400000>;
+			record-size = <0x40000>; /* 256x1024 */
+			console-size = <0x40000>;
+			ftrace-size = <0x40000>;
+			pmsg-size = <0x200000>;
+			ecc-size = <0x0>;
+		};
+
 		/* global autoconfigured region for contiguous allocations */
 		linux,cma {
 			compatible = "shared-dma-pool";
