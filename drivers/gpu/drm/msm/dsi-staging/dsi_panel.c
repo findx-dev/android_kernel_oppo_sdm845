@@ -730,7 +730,9 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 
 	return rc;
 }
-static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
+
+const char *cmd_set_prop_map[];
+int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 				enum dsi_cmd_set_type type)
 {
 	int rc = 0, i = 0;
@@ -753,6 +755,7 @@ static int dsi_panel_tx_cmd_set(struct dsi_panel *panel,
 	count = mode->priv_info->cmd_sets[type].count;
 	state = mode->priv_info->cmd_sets[type].state;
 
+	pr_err("dsi_cmd %s\n", cmd_set_prop_map[type]);
 	if (count == 0) {
 		pr_debug("[%s] No commands to be sent for state(%d)\n",
 			 panel->name, type);
@@ -864,6 +867,12 @@ static int dsi_panel_led_bl_register(struct dsi_panel *panel,
 }
 #endif
 
+extern int oppo_dimlayer_bl_alpha;
+extern int oppo_dimlayer_bl_enabled;
+extern int oppo_dimlayer_bl_enable_real;
+ktime_t oppo_backlight_time;
+u32 oppo_last_backlight = 0;
+u32 oppo_backlight_delta = 0;
 static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	u32 bl_lvl)
 {
@@ -876,6 +885,33 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 	}
 
 	dsi = &panel->mipi_device;
+
+	if (panel->is_hbm_enabled)
+		return 0;
+
+	if (bl_lvl > oppo_last_backlight)
+		oppo_backlight_delta = bl_lvl - oppo_last_backlight;
+	else
+		oppo_backlight_delta = oppo_last_backlight - bl_lvl;
+	oppo_last_backlight = bl_lvl;
+	oppo_backlight_time = ktime_get();
+	if (oppo_dimlayer_bl_enabled != oppo_dimlayer_bl_enable_real) {
+		oppo_dimlayer_bl_enable_real = oppo_dimlayer_bl_enabled;
+		if (oppo_dimlayer_bl_enable_real) {
+			pr_err("Enter DC backlight\n");
+		} else {
+			pr_err("Exit DC backlight\n");
+		}
+	}
+	if (oppo_dimlayer_bl_enable_real) {
+		/*
+		 * avoid effect power and aod mode
+		 */
+		if (bl_lvl > 1) {
+			bl_lvl = oppo_dimlayer_bl_alpha;
+			mdelay(7);      /* Added 7 millisecond delay before updating */
+		}
+	}
 
 	rc = mipi_dsi_dcs_set_display_brightness(dsi, bl_lvl);
 	if (rc < 0)
@@ -1748,6 +1784,22 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"ROI not parsed from DTSI, generated dynamically",
 	"qcom,mdss-dsi-timing-switch-command",
 	"qcom,mdss-dsi-post-mode-switch-on-command",
+	"qcom,mdss-dsi-post-on-backlight",
+	"qcom,mdss-dsi-aod-on-command",
+	"qcom,mdss-dsi-aod-off-command",
+	"qcom,mdss-dsi-hbm-on-command",
+	"qcom,mdss-dsi-hbm-off-command",
+	"qcom,mdss-dsi-aod-hbm-on-command",
+	"qcom,mdss-dsi-aod-hbm-off-command",
+	"qcom,mdss-dsi-seed-0-command",
+	"qcom,mdss-dsi-seed-1-command",
+	"qcom,mdss-dsi-seed-2-command",
+	"qcom,mdss-dsi-seed-3-command",
+	"qcom,mdss-dsi-seed-4-command",
+	"qcom,mdss-dsi-seed-off-command",
+	"qcom,mdss-dsi-normal-hbm-on-command",
+	"qcom,mdss-dsi-aod-high-mode-command",
+	"qcom,mdss-dsi-aod-low-mode-command",
 };
 
 const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
@@ -1772,6 +1824,22 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"ROI not parsed from DTSI, generated dynamically",
 	"qcom,mdss-dsi-timing-switch-command-state",
 	"qcom,mdss-dsi-post-mode-switch-on-command-state",
+	"qcom,mdss-dsi-post-on-backlight-state",
+	"qcom,mdss-dsi-aod-on-command-state",
+	"qcom,mdss-dsi-aod-off-command-state",
+	"qcom,mdss-dsi-hbm-on-command-state",
+	"qcom,mdss-dsi-hbm-off-command-state",
+	"qcom,mdss-dsi-aod-hbm-on-command-state",
+	"qcom,mdss-dsi-aod-hbm-off-command-state",
+	"qcom,mdss-dsi-seed-0-command-state",
+	"qcom,mdss-dsi-seed-1-command-state",
+	"qcom,mdss-dsi-seed-2-command-state",
+	"qcom,mdss-dsi-seed-3-command-state",
+	"qcom,mdss-dsi-seed-4-command-state",
+	"qcom,mdss-dsi-seed-off-command-state",
+	"qcom,mdss-dsi-normal-hbm-on-command-state",
+	"qcom,mdss-dsi-aod-high-mode-command-state",
+	"qcom,mdss-dsi-aod-low-mode-command-state",
 };
 
 static int dsi_panel_get_cmd_pkt_count(const char *data, u32 length, u32 *cnt)
@@ -3784,6 +3852,8 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_LP1 cmd, rc=%d\n",
 		       panel->name, rc);
+	panel->need_power_on_backlight = true;
+	set_oppo_display_power_status(OPPO_DISPLAY_POWER_DOZE);
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -3805,6 +3875,7 @@ int dsi_panel_set_lp2(struct dsi_panel *panel)
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_LP2 cmd, rc=%d\n",
 		       panel->name, rc);
+	set_oppo_display_power_status(OPPO_DISPLAY_POWER_DOZE_SUSPEND);
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -3826,6 +3897,7 @@ int dsi_panel_set_nolp(struct dsi_panel *panel)
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_NOLP cmd, rc=%d\n",
 		       panel->name, rc);
+	set_oppo_display_power_status(OPPO_DISPLAY_POWER_ON);
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4049,6 +4121,8 @@ int dsi_panel_enable(struct dsi_panel *panel)
 		       panel->name, rc);
 	}
 	panel->panel_initialized = true;
+	panel->need_power_on_backlight = true;
+	set_oppo_display_power_status(OPPO_DISPLAY_POWER_ON);
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4130,6 +4204,7 @@ int dsi_panel_disable(struct dsi_panel *panel)
 	panel->panel_initialized = false;
 
 error:
+	set_oppo_display_power_status(OPPO_DISPLAY_POWER_OFF);
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }

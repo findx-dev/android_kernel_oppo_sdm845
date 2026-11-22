@@ -1084,6 +1084,8 @@ int dsi_message_validate_tx_mode(struct dsi_ctrl *dsi_ctrl,
 	return rc;
 }
 
+static struct dsi_ctrl *global_dsi_ctrl;
+
 static int dsi_message_tx(struct dsi_ctrl *dsi_ctrl,
 			  const struct mipi_dsi_msg *msg,
 			  u32 flags)
@@ -1158,7 +1160,14 @@ static int dsi_message_tx(struct dsi_ctrl *dsi_ctrl,
 		cmd_mem.use_lpm = (msg->flags & MIPI_DSI_MSG_USE_LPM) ?
 			true : false;
 
+		global_dsi_ctrl = dsi_ctrl;
+
 		cmdbuf = (u8 *)(dsi_ctrl->vaddr);
+
+		if (cmdbuf == NULL) {
+			pr_err("dsi_message_tx and cmdbuf is null\n");
+			goto error;
+		}
 
 		msm_gem_sync(dsi_ctrl->tx_cmd_buf);
 		for (cnt = 0; cnt < length; cnt++)
