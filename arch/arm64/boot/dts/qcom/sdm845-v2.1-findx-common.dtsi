@@ -44,6 +44,7 @@
 &snd_934x {
 	qcom,msm-mbhc-hs-mic-max-threshold-mv = <2600>;
 	qcom,msm-mbhc-hs-mic-min-threshold-mv = <75>;
+	oppo,speaker-pa = "maxim";
 };
 
 &wcd934x_cdc {
