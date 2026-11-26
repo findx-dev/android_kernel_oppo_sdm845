@@ -9,6 +9,8 @@
 #define CAM_FLASH_MAX_LED_TRIGGERS 3
 #define MAX_OIS_NAME_SIZE 32
 #define CAM_CSIPHY_SECURE_MODE_ENABLED 1
+#define FD_DFCT_MAX_NUM 5
+#define SG_DFCT_MAX_NUM 299
 #define CAM_IR_LED_SUPPORTED
 /**
  * struct cam_sensor_query_cap - capabilities info for sensor
@@ -23,7 +25,6 @@
  * @ois_slot_id      :  OIS slot id which connected to sensor
  * @flash_slot_id    :  Flash slot id which connected to sensor
  * @csiphy_slot_id   :  CSIphy slot id which connected to sensor
- * @irled_slot_id    :  IRLED slot id which connected to sensor
  *
  */
 struct  cam_sensor_query_cap {
@@ -37,7 +38,6 @@ struct  cam_sensor_query_cap {
 	uint32_t        ois_slot_id;
 	uint32_t        flash_slot_id;
 	uint32_t        csiphy_slot_id;
-	uint32_t        ir_led_slot_id;
 } __attribute__((packed));
 
 /**
@@ -475,6 +475,43 @@ struct cam_flash_query_cap_info {
 	uint32_t    max_current_flash[CAM_FLASH_MAX_LED_TRIGGERS];
 	uint32_t    max_duration_flash[CAM_FLASH_MAX_LED_TRIGGERS];
 	uint32_t    max_current_torch[CAM_FLASH_MAX_LED_TRIGGERS];
+} __attribute__ ((packed));
+
+struct sony_dfct_tbl_t {
+	int sg_dfct_num;
+	int sg_dfct_addr[SG_DFCT_MAX_NUM];
+	int fd_dfct_num;
+	int fd_dfct_addr[FD_DFCT_MAX_NUM];
+} __attribute__ ((packed));
+
+#define CALIB_DATA_LENGTH		1561
+#define WRITE_DATA_MAX_LENGTH		8
+#define WRITE_DATA_DELAY		5
+
+struct cam_write_eeprom_t {
+	uint32_t cam_id;
+	uint32_t baseAddr;
+	uint32_t calibDataSize;
+	uint32_t isWRP;
+	uint32_t WRPaddr;
+	unsigned char calibData[CALIB_DATA_LENGTH];
+} __attribute__ ((packed));
+
+#define EEPROM_SN_SIZE			16
+
+struct read_eeprom_SN_t {
+	uint32_t cam_id;
+	uint32_t baseAddr;
+	uint32_t SNSize;
+	unsigned char eepromSN[EEPROM_SN_SIZE];
+} __attribute__ ((packed));
+
+#define EEPROM_CHECK_DATA_MAX_SIZE	196
+
+struct check_eeprom_data_t {
+	uint32_t cam_id;
+	uint32_t startAddr;
+	uint32_t eepromData_checksum;
 } __attribute__ ((packed));
 
 /**

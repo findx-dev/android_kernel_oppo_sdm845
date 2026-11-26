@@ -1904,6 +1904,7 @@ static int qpnp_flash_led_parse_each_led_dt(struct qpnp_flash_led *led,
 	fnode->pdev = led->pdev;
 	fnode->cdev.brightness_set = qpnp_flash_led_brightness_set;
 	fnode->cdev.brightness_get = qpnp_flash_led_brightness_get;
+	fnode->cdev.flags |= LED_KEEP_TRIGGER;
 
 	rc = of_property_read_string(node, "qcom,led-name", &fnode->cdev.name);
 	if (rc < 0) {
@@ -2077,6 +2078,7 @@ static int qpnp_flash_led_parse_each_led_dt(struct qpnp_flash_led *led,
 		pr_err("Unable to register led node %d\n", fnode->id);
 		return rc;
 	}
+	led_trigger_set_default(&fnode->cdev);
 
 	fnode->cdev.dev->of_node = node;
 	fnode->strobe_pinctrl = devm_pinctrl_get(fnode->cdev.dev);
@@ -2182,6 +2184,7 @@ static int qpnp_flash_led_parse_and_register_switch(struct qpnp_flash_led *led,
 		pr_err("Unable to register led switch node\n");
 		return rc;
 	}
+	led_trigger_set_default(&snode->cdev);
 
 	snode->cdev.dev->of_node = node;
 

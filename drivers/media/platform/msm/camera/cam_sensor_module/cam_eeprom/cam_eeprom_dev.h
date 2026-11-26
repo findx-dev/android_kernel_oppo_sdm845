@@ -187,4 +187,7 @@ struct cam_eeprom_ctrl_t {
 int32_t cam_eeprom_update_i2c_info(struct cam_eeprom_ctrl_t *e_ctrl,
 	struct cam_eeprom_i2c_info_t *i2c_info);
 
+struct cam_eeprom_ctrl_t *cam_eeprom_get_private_ctrl(uint32_t index);
+int cam_eeprom_private_read(uint32_t index, struct cam_control *cmd);
+
 #endif /*_CAM_EEPROM_DEV_H_ */

@@ -1035,3 +1035,147 @@ release_mutex:
 	return rc;
 }
 
+static void cam_eeprom_private_power_info(
+	struct cam_sensor_power_ctrl_t *power_info,
+	struct cam_sensor_power_setting *power_up,
+	struct cam_sensor_power_setting *power_down)
+{
+	memset(power_info, 0, sizeof(*power_info));
+	memset(power_up, 0,
+		3 * sizeof(struct cam_sensor_power_setting));
+	memset(power_down, 0,
+		3 * sizeof(struct cam_sensor_power_setting));
+
+	power_up[0].seq_type = SENSOR_MCLK;
+	power_up[0].seq_val = 0;
+	power_up[0].config_val = 24000000;
+	power_up[1].seq_type = SENSOR_VANA;
+	power_up[2].seq_type = SENSOR_VDIG;
+
+	power_down[0].seq_type = SENSOR_VDIG;
+	power_down[1].seq_type = SENSOR_VANA;
+	power_down[2].seq_type = SENSOR_MCLK;
+	power_down[2].seq_val = 0;
+
+	power_info->power_setting = power_up;
+	power_info->power_setting_size = 3;
+	power_info->power_down_setting = power_down;
+	power_info->power_down_setting_size = 3;
+}
+
+static void cam_eeprom_private_power_down(
+	struct cam_eeprom_ctrl_t *e_ctrl,
+	struct cam_sensor_power_ctrl_t *power_info)
+{
+	cam_sensor_util_power_down(power_info, &e_ctrl->soc_info);
+
+	if (e_ctrl->io_master_info.master_type == CCI_MASTER)
+		camera_io_release(&e_ctrl->io_master_info);
+}
+
+int cam_eeprom_private_read(uint32_t index, struct cam_control *cmd)
+{
+	struct cam_eeprom_ctrl_t *e_ctrl;
+	struct cam_sensor_power_ctrl_t power_info;
+	struct cam_sensor_power_setting power_up[3];
+	struct cam_sensor_power_setting power_down[3];
+	struct cam_write_eeprom_t *calib = NULL;
+	int rc = 0;
+	uint32_t i;
+	uint32_t value;
+
+	if (!cmd || (cmd->handle_type != CAM_HANDLE_USER_POINTER))
+		return -EINVAL;
+
+	e_ctrl = cam_eeprom_get_private_ctrl(index);
+	if (!e_ctrl)
+		return -ENODEV;
+
+	mutex_lock(&e_ctrl->eeprom_mutex);
+
+	if (cmd->op_code == CAM_READ_EEPROM_DATA) {
+		calib = kzalloc(sizeof(*calib), GFP_KERNEL);
+		if (!calib) {
+			rc = -ENOMEM;
+			goto release_mutex;
+		}
+
+		if (copy_from_user(calib, u64_to_user_ptr(cmd->handle),
+			sizeof(*calib))) {
+			rc = -EFAULT;
+			goto release_mutex;
+		}
+
+		if (((calib->cam_id != 0x01) && (calib->cam_id != 0x10)) ||
+			(calib->calibDataSize != CALIB_DATA_LENGTH)) {
+			rc = -EINVAL;
+			goto release_mutex;
+		}
+
+		cam_eeprom_private_power_info(&power_info, power_up,
+			power_down);
+		rc = cam_eeprom_power_up(e_ctrl, &power_info);
+		if (rc)
+			goto release_mutex;
+
+		memset(calib->calibData, 0, CALIB_DATA_LENGTH);
+		for (i = 0; i < CALIB_DATA_LENGTH; i++) {
+			rc = camera_io_dev_read(&e_ctrl->io_master_info,
+				calib->baseAddr + i, &value,
+				CAMERA_SENSOR_I2C_TYPE_WORD,
+				CAMERA_SENSOR_I2C_TYPE_BYTE);
+			if (rc)
+				break;
+			calib->calibData[i] = value;
+		}
+
+		cam_eeprom_private_power_down(e_ctrl, &power_info);
+		if (!rc && copy_to_user(u64_to_user_ptr(cmd->handle), calib,
+			sizeof(*calib)))
+			rc = -EFAULT;
+	} else if (cmd->op_code == CAM_READ_EEPROM_SN) {
+		struct read_eeprom_SN_t data;
+
+		if (copy_from_user(&data, u64_to_user_ptr(cmd->handle),
+			sizeof(data))) {
+			rc = -EFAULT;
+			goto release_mutex;
+		}
+
+		if (((data.cam_id != 0x01) && (data.cam_id != 0x10)) ||
+			(data.SNSize != EEPROM_SN_SIZE)) {
+			rc = -EINVAL;
+			goto release_mutex;
+		}
+
+		cam_eeprom_private_power_info(&power_info, power_up,
+			power_down);
+		rc = cam_eeprom_power_up(e_ctrl, &power_info);
+		if (rc)
+			goto release_mutex;
+
+		memset(data.eepromSN, 0, EEPROM_SN_SIZE);
+		for (i = 0; i < EEPROM_SN_SIZE; i++) {
+			rc = camera_io_dev_read(&e_ctrl->io_master_info,
+				data.baseAddr + i, &value,
+				CAMERA_SENSOR_I2C_TYPE_WORD,
+				CAMERA_SENSOR_I2C_TYPE_BYTE);
+			if (rc)
+				break;
+			data.eepromSN[i] = value;
+		}
+
+		cam_eeprom_private_power_down(e_ctrl, &power_info);
+		if (!rc && copy_to_user(u64_to_user_ptr(cmd->handle), &data,
+			sizeof(data)))
+			rc = -EFAULT;
+	} else {
+		rc = -EINVAL;
+	}
+
+release_mutex:
+	kfree(calib);
+	mutex_unlock(&e_ctrl->eeprom_mutex);
+	return rc;
+}
+

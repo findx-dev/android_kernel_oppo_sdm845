@@ -19,6 +19,7 @@
 #include "cam_trace.h"
 #include "cam_common_util.h"
 #include "cam_packet_util.h"
+#include "../mx6300/mx6300-spi.h"
 
 
 static void cam_sensor_update_req_mgr(
@@ -502,8 +503,6 @@ void cam_sensor_query_cap(struct cam_sensor_ctrl_t *s_ctrl,
 		s_ctrl->sensordata->subdev_id[SUB_MODULE_LED_FLASH];
 	query_cap->ois_slot_id =
 		s_ctrl->sensordata->subdev_id[SUB_MODULE_OIS];
-	query_cap->ir_led_slot_id =
-		s_ctrl->sensordata->subdev_id[SUB_MODULE_IR_LED];
 	query_cap->slot_info =
 		s_ctrl->soc_info.index;
 }
@@ -527,16 +526,265 @@ static uint16_t cam_sensor_id_by_mask(struct cam_sensor_ctrl_t *s_ctrl,
 	return sensor_id;
 }
 
+#define FD_DFCT_NUM_ADDR		0x7678
+#define SG_DFCT_NUM_ADDR		0x767A
+#define FD_DFCT_ADDR			0x8B00
+#define SG_DFCT_ADDR			0x8B10
+#define V_ADDR_SHIFT			12
+#define H_DATA_MASK			0xFFF80000
+#define V_DATA_MASK			0x0007FF80
+
+static struct sony_dfct_tbl_t imx471_dfct_tbl;
+
+static int cam_sensor_imx471_get_dpc_data(struct cam_sensor_ctrl_t *s_ctrl)
+{
+	int i, j;
+	int rc = 0;
+	int check_reg_val;
+	int dfct_data_h, dfct_data_l;
+	int dfct_data;
+	int fd_dfct_num = 0;
+	int sg_dfct_num = 0;
+	int retry_cnt = 5;
+	int data_h, data_v;
+	int fd_dfct_addr = FD_DFCT_ADDR;
+	int sg_dfct_addr = SG_DFCT_ADDR;
+
+	memset(&imx471_dfct_tbl, 0, sizeof(imx471_dfct_tbl));
+
+	for (i = 0; i < retry_cnt; i++) {
+		check_reg_val = 0;
+		rc = camera_io_dev_read(&s_ctrl->io_master_info,
+			FD_DFCT_NUM_ADDR, &check_reg_val,
+			CAMERA_SENSOR_I2C_TYPE_WORD,
+			CAMERA_SENSOR_I2C_TYPE_BYTE);
+		if (!rc) {
+			fd_dfct_num = check_reg_val & 0x07;
+			if (fd_dfct_num > FD_DFCT_MAX_NUM)
+				fd_dfct_num = FD_DFCT_MAX_NUM;
+			break;
+		}
+	}
+
+	for (i = 0; i < retry_cnt; i++) {
+		check_reg_val = 0;
+		rc = camera_io_dev_read(&s_ctrl->io_master_info,
+			SG_DFCT_NUM_ADDR, &check_reg_val,
+			CAMERA_SENSOR_I2C_TYPE_WORD,
+			CAMERA_SENSOR_I2C_TYPE_WORD);
+		if (!rc) {
+			sg_dfct_num = check_reg_val & 0x01FF;
+			if (sg_dfct_num > SG_DFCT_MAX_NUM)
+				sg_dfct_num = SG_DFCT_MAX_NUM;
+			break;
+		}
+	}
+
+	imx471_dfct_tbl.fd_dfct_num = fd_dfct_num;
+	imx471_dfct_tbl.sg_dfct_num = sg_dfct_num;
+
+	for (j = 0; j < fd_dfct_num; j++) {
+		for (i = 0; i < retry_cnt; i++) {
+			dfct_data_h = 0;
+			rc = camera_io_dev_read(&s_ctrl->io_master_info,
+				fd_dfct_addr, &dfct_data_h,
+				CAMERA_SENSOR_I2C_TYPE_WORD,
+				CAMERA_SENSOR_I2C_TYPE_WORD);
+			if (!rc)
+				break;
+		}
+		for (i = 0; i < retry_cnt; i++) {
+			dfct_data_l = 0;
+			rc = camera_io_dev_read(&s_ctrl->io_master_info,
+				fd_dfct_addr + 2, &dfct_data_l,
+				CAMERA_SENSOR_I2C_TYPE_WORD,
+				CAMERA_SENSOR_I2C_TYPE_WORD);
+			if (!rc)
+				break;
+		}
+
+		dfct_data = (dfct_data_h << 16) | dfct_data_l;
+		data_h = (dfct_data & (H_DATA_MASK >> (j % 8))) >>
+			(19 - (j % 8));
+		data_v = (dfct_data & (V_DATA_MASK >> (j % 8))) >>
+			(7 - (j % 8));
+		imx471_dfct_tbl.fd_dfct_addr[j] =
+			((data_h & 0x1FFF) << V_ADDR_SHIFT) |
+			(data_v & 0x0FFF);
+		fd_dfct_addr += 3 + ((j + 1) % 8 == 0);
+	}
+
+	for (j = 0; j < sg_dfct_num; j++) {
+		for (i = 0; i < retry_cnt; i++) {
+			dfct_data_h = 0;
+			rc = camera_io_dev_read(&s_ctrl->io_master_info,
+				sg_dfct_addr, &dfct_data_h,
+				CAMERA_SENSOR_I2C_TYPE_WORD,
+				CAMERA_SENSOR_I2C_TYPE_WORD);
+			if (!rc)
+				break;
+		}
+		for (i = 0; i < retry_cnt; i++) {
+			dfct_data_l = 0;
+			rc = camera_io_dev_read(&s_ctrl->io_master_info,
+				sg_dfct_addr + 2, &dfct_data_l,
+				CAMERA_SENSOR_I2C_TYPE_WORD,
+				CAMERA_SENSOR_I2C_TYPE_WORD);
+			if (!rc)
+				break;
+		}
+
+		dfct_data = (dfct_data_h << 16) | dfct_data_l;
+		data_h = (dfct_data & (H_DATA_MASK >> (j % 8))) >>
+			(19 - (j % 8));
+		data_v = (dfct_data & (V_DATA_MASK >> (j % 8))) >>
+			(7 - (j % 8));
+		imx471_dfct_tbl.sg_dfct_addr[j] =
+			((data_h & 0x1FFF) << V_ADDR_SHIFT) |
+			(data_v & 0x0FFF);
+		sg_dfct_addr += 3 + ((j + 1) % 8 == 0);
+	}
+
+	CAM_INFO(CAM_SENSOR, "IMX471 DPC: fd=%d sg=%d",
+		fd_dfct_num, sg_dfct_num);
+	return rc;
+}
+
+static bool cam_sensor_is_mx6300(struct cam_sensor_ctrl_t *s_ctrl)
+{
+	return s_ctrl && s_ctrl->sensordata &&
+		s_ctrl->sensordata->slave_info.sensor_id == 0x6300;
+}
+
+static int cam_sensor_mx6300_get_stream_mode(void *arg, int *mode)
+{
+	int rc;
+	uintptr_t packet_ptr;
+	uint32_t *cmd_buf = NULL;
+	size_t cmd_buf_len = 0;
+	size_t packet_len;
+	size_t remain_len;
+	struct cam_control *cmd = arg;
+	struct cam_config_dev_cmd config;
+	struct cam_packet *packet;
+	struct cam_cmd_buf_desc *cmd_desc;
+	struct common_header *cmm_hdr;
+
+	if (copy_from_user(&config, u64_to_user_ptr(cmd->handle),
+		sizeof(config)))
+		return -EFAULT;
+
+	rc = cam_mem_get_cpu_buf(config.packet_handle, &packet_ptr,
+		&packet_len);
+	if (rc < 0)
+		return rc;
+
+	if ((sizeof(struct cam_packet) > packet_len) ||
+		((size_t)config.offset >=
+		packet_len - sizeof(struct cam_packet)))
+		return -EINVAL;
+
+	remain_len = packet_len - (size_t)config.offset;
+	packet = (struct cam_packet *)(packet_ptr + (uint32_t)config.offset);
+	rc = cam_packet_util_validate_packet(packet, remain_len);
+	if (rc < 0)
+		return rc;
+
+	if ((packet->header.op_code & 0xFFFFFF) !=
+		CAM_SENSOR_PACKET_OPCODE_SENSOR_CONFIG ||
+		!packet->num_cmd_buf)
+		return -EINVAL;
+
+	cmd_desc = (struct cam_cmd_buf_desc *)((uint8_t *)&packet->payload +
+		packet->cmd_buf_offset);
+	rc = cam_packet_util_validate_cmd_desc(cmd_desc);
+	if (rc < 0)
+		return rc;
+
+	rc = cam_packet_util_get_cmd_mem_addr(cmd_desc->mem_handle,
+		&cmd_buf, &cmd_buf_len);
+	if (rc < 0)
+		return rc;
+
+	if (((size_t)cmd_desc->offset > cmd_buf_len) ||
+		((size_t)cmd_desc->length >
+		cmd_buf_len - (size_t)cmd_desc->offset) ||
+		(cmd_desc->length < sizeof(*cmm_hdr)))
+		return -EINVAL;
+
+	cmd_buf = (uint32_t *)((uint8_t *)cmd_buf + cmd_desc->offset);
+	cmm_hdr = (struct common_header *)cmd_buf;
+
+	switch (cmm_hdr->cmd_type) {
+	case CAMERA_SENSOR_CMD_TYPE_I2C_RNDM_WR: {
+		struct cam_cmd_i2c_random_wr *random_wr =
+			(struct cam_cmd_i2c_random_wr *)cmd_buf;
+
+		if (!random_wr->header.count ||
+			cmd_desc->length < sizeof(*random_wr))
+			return -EINVAL;
+		*mode = random_wr->random_wr_payload[0].reg_data;
+		break;
+	}
+	case CAMERA_SENSOR_CMD_TYPE_I2C_CONT_WR: {
+		struct cam_cmd_i2c_continuous_wr *cont_wr =
+			(struct cam_cmd_i2c_continuous_wr *)cmd_buf;
+
+		if (!cont_wr->header.count ||
+			cmd_desc->length < sizeof(*cont_wr))
+			return -EINVAL;
+		*mode = cont_wr->data_read[0].reg_data;
+		break;
+	}
+	default:
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int cam_sensor_mx6300_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
+	struct cam_control *cmd)
+{
+	int mode = 0;
+	int rc;
+
+	switch (cmd->op_code) {
+	case CAM_START_DEV:
+		if ((s_ctrl->sensor_state == CAM_SENSOR_INIT) ||
+			(s_ctrl->sensor_state == CAM_SENSOR_START))
+			return -EINVAL;
+		rc = cam_sensor_ctl_mxmodule(MX_MSG_START, 1);
+		if (!rc)
+			s_ctrl->sensor_state = CAM_SENSOR_START;
+		return rc;
+	case CAM_STOP_DEV:
+		if (s_ctrl->sensor_state != CAM_SENSOR_START)
+			return -EINVAL;
+		rc = cam_sensor_ctl_mxmodule(MX_MSG_STOP, 0);
+		if (!rc)
+			s_ctrl->sensor_state = CAM_SENSOR_ACQUIRE;
+		return rc;
+	case CAM_CONFIG_DEV:
+		rc = cam_sensor_mx6300_get_stream_mode(cmd, &mode);
+		if (rc < 0)
+			return rc;
+		return cam_sensor_ctl_mxmodule(MX_MSG_CONFIG, mode);
+	default:
+		return -EOPNOTSUPP;
+	}
+}
+
 void cam_sensor_shutdown(struct cam_sensor_ctrl_t *s_ctrl)
 {
 	struct cam_sensor_power_ctrl_t *power_info =
 		&s_ctrl->sensordata->power_info;
 	int rc = 0;
 
-	if ((s_ctrl->sensor_state == CAM_SENSOR_INIT) &&
-		(s_ctrl->is_probe_succeed == 0))
+	if (s_ctrl->sensor_state == CAM_SENSOR_INIT)
 		return;
 
+	s_ctrl->is_probe_succeed = 0;
 	cam_sensor_release_stream_rsc(s_ctrl);
 	cam_sensor_release_per_frame_resource(s_ctrl);
 	cam_sensor_power_down(s_ctrl);
@@ -555,7 +803,6 @@ void cam_sensor_shutdown(struct cam_sensor_ctrl_t *s_ctrl)
 	power_info->power_down_setting_size = 0;
 	s_ctrl->streamon_count = 0;
 	s_ctrl->streamoff_count = 0;
-	s_ctrl->is_probe_succeed = 0;
 	s_ctrl->sensor_state = CAM_SENSOR_INIT;
 }
 
@@ -573,6 +820,9 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
+	if (slave_info->sensor_id == 0x6300)
+		return 0;
+
 	rc = camera_io_dev_read(
 		&(s_ctrl->io_master_info),
 		slave_info->sensor_id_reg_addr,
@@ -586,6 +836,10 @@ int cam_sensor_match_id(struct cam_sensor_ctrl_t *s_ctrl)
 				chipid, slave_info->sensor_id);
 		return -ENODEV;
 	}
+
+	if (slave_info->sensor_id == 0x0471)
+		cam_sensor_imx471_get_dpc_data(s_ctrl);
+
 	return rc;
 }
 
@@ -611,6 +865,11 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 	}
 
 	mutex_lock(&(s_ctrl->cam_sensor_mutex));
+	if (cam_sensor_is_mx6300(s_ctrl)) {
+		rc = cam_sensor_mx6300_driver_cmd(s_ctrl, cmd);
+		if (rc != -EOPNOTSUPP)
+			goto release_mutex;
+	}
 	switch (cmd->op_code) {
 	case CAM_SENSOR_PROBE_CMD: {
 		if (s_ctrl->is_probe_succeed == 1) {
@@ -633,28 +892,30 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 			goto release_mutex;
 		}
 
-		/* Parse and fill vreg params for powerup settings */
-		rc = msm_camera_fill_vreg_params(
-			&s_ctrl->soc_info,
-			s_ctrl->sensordata->power_info.power_setting,
-			s_ctrl->sensordata->power_info.power_setting_size);
-		if (rc < 0) {
-			CAM_ERR(CAM_SENSOR,
-				"Fail in filling vreg params for PUP rc %d",
-				 rc);
-			goto free_power_settings;
-		}
+		if (!cam_sensor_is_mx6300(s_ctrl)) {
+			/* Parse and fill vreg params for powerup settings */
+			rc = msm_camera_fill_vreg_params(
+				&s_ctrl->soc_info,
+				s_ctrl->sensordata->power_info.power_setting,
+				s_ctrl->sensordata->power_info.power_setting_size);
+			if (rc < 0) {
+				CAM_ERR(CAM_SENSOR,
+					"Fail in filling vreg params for PUP rc %d",
+					 rc);
+				goto free_power_settings;
+			}
 
-		/* Parse and fill vreg params for powerdown settings*/
-		rc = msm_camera_fill_vreg_params(
-			&s_ctrl->soc_info,
-			s_ctrl->sensordata->power_info.power_down_setting,
-			s_ctrl->sensordata->power_info.power_down_setting_size);
-		if (rc < 0) {
-			CAM_ERR(CAM_SENSOR,
-				"Fail in filling vreg params for PDOWN rc %d",
-				 rc);
-			goto free_power_settings;
+			/* Parse and fill vreg params for powerdown settings*/
+			rc = msm_camera_fill_vreg_params(
+				&s_ctrl->soc_info,
+				s_ctrl->sensordata->power_info.power_down_setting,
+				s_ctrl->sensordata->power_info.power_down_setting_size);
+			if (rc < 0) {
+				CAM_ERR(CAM_SENSOR,
+					"Fail in filling vreg params for PDOWN rc %d",
+					 rc);
+				goto free_power_settings;
+			}
 		}
 
 		/* Power up and probe sensor */
@@ -910,6 +1171,16 @@ int32_t cam_sensor_driver_cmd(struct cam_sensor_ctrl_t *s_ctrl,
 		}
 	}
 		break;
+	case CAM_GET_DPC_DATA:
+		if (s_ctrl->sensordata->slave_info.sensor_id != 0x0471)
+			goto release_mutex;
+
+		if (copy_to_user(u64_to_user_ptr(cmd->handle),
+			&imx471_dfct_tbl, sizeof(imx471_dfct_tbl))) {
+			CAM_ERR(CAM_SENSOR, "Failed to copy DPC data");
+			rc = -EFAULT;
+		}
+		break;
 	default:
 		CAM_ERR(CAM_SENSOR, "Invalid Opcode: %d", cmd->op_code);
 		rc = -EINVAL;
@@ -1008,6 +1279,9 @@ int cam_sensor_power_up(struct cam_sensor_ctrl_t *s_ctrl)
 		return -EINVAL;
 	}
 
+	if (slave_info->sensor_id == 0x6300)
+		return 0;
+
 	if (s_ctrl->bob_pwm_switch) {
 		rc = cam_sensor_bob_pwm_mode_switch(soc_info,
 			s_ctrl->bob_reg_index, true);
@@ -1049,6 +1323,10 @@ int cam_sensor_power_down(struct cam_sensor_ctrl_t *s_ctrl)
 		CAM_ERR(CAM_SENSOR, "failed: power_info %pK", power_info);
 		return -EINVAL;
 	}
+
+	if (cam_sensor_is_mx6300(s_ctrl))
+		return 0;
+
 	rc = cam_sensor_util_power_down(power_info, soc_info);
 	if (rc < 0) {
 		CAM_ERR(CAM_SENSOR, "power down the core is failed:%d", rc);

@@ -139,7 +139,9 @@ static int32_t cam_sensor_driver_get_dt_data(struct cam_sensor_ctrl_t *s_ctrl)
 			&sensordata->power_info.gpio_num_info);
 	if (rc < 0) {
 		CAM_ERR(CAM_SENSOR, "Failed to read gpios %d", rc);
-		goto FREE_SENSOR_DATA;
+		if (!of_find_property(of_node, "oppo,mx6300", NULL))
+			goto FREE_SENSOR_DATA;
+		rc = 0;
 	}
 
 	s_ctrl->id = soc_info->index;

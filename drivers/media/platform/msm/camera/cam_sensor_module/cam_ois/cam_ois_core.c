@@ -335,7 +335,7 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	total_bytes = fw->size;
-	i2c_reg_setting.addr_type = CAMERA_SENSOR_I2C_TYPE_BYTE;
+	i2c_reg_setting.addr_type = CAMERA_SENSOR_I2C_TYPE_WORD;
 	i2c_reg_setting.data_type = CAMERA_SENSOR_I2C_TYPE_BYTE;
 	i2c_reg_setting.size = total_bytes;
 	i2c_reg_setting.delay = 0;
@@ -355,14 +355,15 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	for (cnt = 0, ptr = (uint8_t *)fw->data; cnt < total_bytes;
 		cnt++, ptr++) {
 		i2c_reg_setting.reg_setting[cnt].reg_addr =
-			o_ctrl->opcode.prog;
+			o_ctrl->opcode.prog + cnt;
 		i2c_reg_setting.reg_setting[cnt].reg_data = *ptr;
 		i2c_reg_setting.reg_setting[cnt].delay = 0;
 		i2c_reg_setting.reg_setting[cnt].data_mask = 0;
 	}
+	i2c_reg_setting.delay = 0;
 
-	rc = camera_io_dev_write_continuous(&(o_ctrl->io_master_info),
-		&i2c_reg_setting, 1);
+	rc = camera_io_dev_write(&(o_ctrl->io_master_info),
+		&i2c_reg_setting);
 	if (rc < 0) {
 		CAM_ERR(CAM_OIS, "OIS FW download failed %d", rc);
 		goto release_firmware;
@@ -380,7 +381,7 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	}
 
 	total_bytes = fw->size;
-	i2c_reg_setting.addr_type = CAMERA_SENSOR_I2C_TYPE_BYTE;
+	i2c_reg_setting.addr_type = CAMERA_SENSOR_I2C_TYPE_WORD;
 	i2c_reg_setting.data_type = CAMERA_SENSOR_I2C_TYPE_BYTE;
 	i2c_reg_setting.size = total_bytes;
 	i2c_reg_setting.delay = 0;
@@ -400,14 +401,15 @@ static int cam_ois_fw_download(struct cam_ois_ctrl_t *o_ctrl)
 	for (cnt = 0, ptr = (uint8_t *)fw->data; cnt < total_bytes;
 		cnt++, ptr++) {
 		i2c_reg_setting.reg_setting[cnt].reg_addr =
-			o_ctrl->opcode.coeff;
+			o_ctrl->opcode.coeff + cnt;
 		i2c_reg_setting.reg_setting[cnt].reg_data = *ptr;
 		i2c_reg_setting.reg_setting[cnt].delay = 0;
 		i2c_reg_setting.reg_setting[cnt].data_mask = 0;
 	}
+	i2c_reg_setting.delay = 0;
 
-	rc = camera_io_dev_write_continuous(&(o_ctrl->io_master_info),
-		&i2c_reg_setting, 1);
+	rc = camera_io_dev_write(&(o_ctrl->io_master_info),
+		&i2c_reg_setting);
 	if (rc < 0)
 		CAM_ERR(CAM_OIS, "OIS FW download failed %d", rc);
 
@@ -587,18 +589,18 @@ static int cam_ois_pkt_parse(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 			o_ctrl->cam_ois_state = CAM_OIS_CONFIG;
 		}
 
+		rc = cam_ois_apply_settings(o_ctrl, &o_ctrl->i2c_init_data);
+		if (rc < 0) {
+			CAM_ERR(CAM_OIS, "Cannot apply Init settings");
+			goto pwr_dwn;
+		}
+
 		if (o_ctrl->ois_fw_flag) {
 			rc = cam_ois_fw_download(o_ctrl);
 			if (rc) {
 				CAM_ERR(CAM_OIS, "Failed OIS FW Download");
 				goto pwr_dwn;
 			}
-		}
-
-		rc = cam_ois_apply_settings(o_ctrl, &o_ctrl->i2c_init_data);
-		if (rc < 0) {
-			CAM_ERR(CAM_OIS, "Cannot apply Init settings");
-			goto pwr_dwn;
 		}
 
 		if (o_ctrl->is_ois_calib) {
@@ -777,6 +779,7 @@ int cam_ois_driver_cmd(struct cam_ois_ctrl_t *o_ctrl, void *arg)
 		rc = cam_ois_pkt_parse(o_ctrl, arg);
 		if (rc) {
 			CAM_ERR(CAM_OIS, "Failed in ois pkt Parsing");
+			rc = 0;
 			goto release_mutex;
 		}
 		break;

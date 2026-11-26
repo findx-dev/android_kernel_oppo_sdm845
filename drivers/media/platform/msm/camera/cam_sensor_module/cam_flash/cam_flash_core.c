@@ -496,10 +496,22 @@ static int cam_flash_ops(struct cam_flash_ctrl *flash_ctrl,
 
 int cam_flash_off(struct cam_flash_ctrl *flash_ctrl)
 {
+	int i;
+
 	if (!flash_ctrl) {
 		CAM_ERR(CAM_FLASH, "Flash control Null");
 		return -EINVAL;
 	}
+
+	for (i = 0; i < flash_ctrl->flash_num_sources; i++)
+		if (flash_ctrl->flash_trigger[i])
+			cam_res_mgr_led_trigger_event(
+				flash_ctrl->flash_trigger[i], LED_OFF);
+
+	for (i = 0; i < flash_ctrl->torch_num_sources; i++)
+		if (flash_ctrl->torch_trigger[i])
+			cam_res_mgr_led_trigger_event(
+				flash_ctrl->torch_trigger[i], LED_OFF);
 
 	if (flash_ctrl->switch_trigger)
 		cam_res_mgr_led_trigger_event(flash_ctrl->switch_trigger,
@@ -558,6 +570,18 @@ static int cam_flash_high(
 		CAM_ERR(CAM_FLASH, "Fire Flash Failed: %d", rc);
 
 	return rc;
+}
+
+int cam_flash_on(struct cam_flash_ctrl *flash_ctrl,
+	struct cam_flash_frame_setting *flash_data, int mode)
+{
+	if (mode == 0)
+		return cam_flash_low(flash_ctrl, flash_data);
+
+	if (mode == 1)
+		return cam_flash_high(flash_ctrl, flash_data);
+
+	return -EINVAL;
 }
 
 static int cam_flash_i2c_delete_req(struct cam_flash_ctrl *fctrl,

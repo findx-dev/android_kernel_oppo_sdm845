@@ -350,6 +350,10 @@ int cam_sensor_i2c_command_parser(
 				return -EINVAL;
 			}
 			cmm_hdr = (struct common_header *)cmd_buf;
+			if ((cmm_hdr->cmd_type == CAMERA_SENSOR_CMD_TYPE_INVALID) &&
+				!memchr_inv(cmd_buf, 0,
+					cmd_desc[i].length - byte_cnt))
+				break;
 			generic_op_code = cmm_hdr->third_byte;
 			switch (cmm_hdr->cmd_type) {
 			case CAMERA_SENSOR_CMD_TYPE_I2C_RNDM_WR: {
@@ -590,7 +594,7 @@ int32_t msm_camera_fill_vreg_params(
 
 	num_vreg = soc_info->num_rgltr;
 
-	if ((num_vreg <= 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
+	if ((num_vreg < 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
 		CAM_ERR(CAM_SENSOR, "failed: num_vreg %d", num_vreg);
 		return -EINVAL;
 	}
@@ -1513,7 +1517,7 @@ int cam_sensor_core_power_up(struct cam_sensor_power_ctrl_t *ctrl,
 	gpio_num_info = ctrl->gpio_num_info;
 	num_vreg = soc_info->num_rgltr;
 
-	if ((num_vreg <= 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
+	if ((num_vreg < 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
 		CAM_ERR(CAM_SENSOR, "failed: num_vreg %d", num_vreg);
 		return -EINVAL;
 	}
@@ -1890,7 +1894,7 @@ int cam_sensor_util_power_down(struct cam_sensor_power_ctrl_t *ctrl,
 	gpio_num_info = ctrl->gpio_num_info;
 	num_vreg = soc_info->num_rgltr;
 
-	if ((num_vreg <= 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
+	if ((num_vreg < 0) || (num_vreg > CAM_SOC_MAX_REGULATOR)) {
 		CAM_ERR(CAM_SENSOR, "failed: num_vreg %d", num_vreg);
 		return -EINVAL;
 	}

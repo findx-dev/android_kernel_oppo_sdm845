@@ -16,6 +16,46 @@
 #include "cam_eeprom_core.h"
 #include "cam_debug_util.h"
 
+#define CAM_EEPROM_PRIVATE_MAX	4
+
+static struct cam_eeprom_ctrl_t *cam_eeprom_private_ctrls[
+	CAM_EEPROM_PRIVATE_MAX];
+
+static void cam_eeprom_register_private_ctrl(
+	struct cam_eeprom_ctrl_t *e_ctrl)
+{
+	uint32_t index;
+
+	if (!e_ctrl)
+		return;
+
+	index = e_ctrl->soc_info.index;
+	if (index < CAM_EEPROM_PRIVATE_MAX)
+		cam_eeprom_private_ctrls[index] = e_ctrl;
+}
+
+static void cam_eeprom_unregister_private_ctrl(
+	struct cam_eeprom_ctrl_t *e_ctrl)
+{
+	uint32_t index;
+
+	if (!e_ctrl)
+		return;
+
+	index = e_ctrl->soc_info.index;
+	if ((index < CAM_EEPROM_PRIVATE_MAX) &&
+		(cam_eeprom_private_ctrls[index] == e_ctrl))
+		cam_eeprom_private_ctrls[index] = NULL;
+}
+
+struct cam_eeprom_ctrl_t *cam_eeprom_get_private_ctrl(uint32_t index)
+{
+	if (index >= CAM_EEPROM_PRIVATE_MAX)
+		return NULL;
+
+	return cam_eeprom_private_ctrls[index];
+}
+
 static long cam_eeprom_subdev_ioctl(struct v4l2_subdev *sd,
 	unsigned int cmd, void *arg)
 {
@@ -462,6 +502,7 @@ static int32_t cam_eeprom_platform_driver_probe(
 
 	platform_set_drvdata(pdev, e_ctrl);
 	v4l2_set_subdevdata(&e_ctrl->v4l2_dev_str.sd, e_ctrl);
+	cam_eeprom_register_private_ctrl(e_ctrl);
 
 	e_ctrl->cam_eeprom_state = CAM_EEPROM_INIT;
 
@@ -492,6 +533,7 @@ static int cam_eeprom_platform_driver_remove(struct platform_device *pdev)
 	for (i = 0; i < soc_info->num_clk; i++)
 		devm_clk_put(soc_info->dev, soc_info->clk[i]);
 
+	cam_eeprom_unregister_private_ctrl(e_ctrl);
 	mutex_destroy(&(e_ctrl->eeprom_mutex));
 	kfree(soc_info->soc_private);
 	kfree(e_ctrl->io_master_info.cci_client);

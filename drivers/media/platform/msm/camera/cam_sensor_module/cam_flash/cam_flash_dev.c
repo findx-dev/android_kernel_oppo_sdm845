@@ -15,7 +15,14 @@
 #include "cam_flash_dev.h"
 #include "cam_flash_soc.h"
 #include "cam_flash_core.h"
+#include "cam_eeprom_dev.h"
 #include "cam_common_util.h"
+
+#include <linux/proc_fs.h>
+
+static struct cam_flash_ctrl *vendor_flash_ctrl[2];
+static unsigned int flash_mode;
+static unsigned int pre_flash_mode;
 
 static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 		void *arg, struct cam_flash_private_soc *soc_private)
@@ -190,6 +197,14 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 		}
 		break;
 	}
+	case CAM_READ_EEPROM_DATA:
+	case CAM_READ_EEPROM_SN:
+		rc = cam_eeprom_private_read(fctrl->soc_info.index, cmd);
+		if (rc) {
+			CAM_ERR(CAM_FLASH, "EEPROM private read failed: %d", rc);
+			goto release_mutex;
+		}
+		break;
 	default:
 		CAM_ERR(CAM_FLASH, "Invalid Opcode: %d", cmd->op_code);
 		rc = -EINVAL;
@@ -198,6 +213,123 @@ static int32_t cam_flash_driver_cmd(struct cam_flash_ctrl *fctrl,
 release_mutex:
 	mutex_unlock(&(fctrl->flash_mutex));
 	return rc;
+}
+
+static int cam_flash_proc_on_off(bool is_back_flash)
+{
+	struct cam_flash_frame_setting flash_data = {0};
+	struct cam_flash_ctrl *fctrl;
+	unsigned int index = is_back_flash ? 0 : 1;
+	int rc = 0;
+
+	if (index >= ARRAY_SIZE(vendor_flash_ctrl) ||
+		!vendor_flash_ctrl[index])
+		index = 0;
+
+	fctrl = vendor_flash_ctrl[index];
+	if (!fctrl)
+		return -ENODEV;
+
+	if (pre_flash_mode == flash_mode)
+		return 0;
+
+	if ((pre_flash_mode == 5) && (flash_mode == 0))
+		return 0;
+
+	mutex_lock(&fctrl->flash_mutex);
+	switch (flash_mode) {
+	case 0:
+		cam_flash_off(fctrl);
+		fctrl->flash_state = CAM_FLASH_STATE_INIT;
+		break;
+	case 1:
+		flash_data.led_current_ma[0] =
+			fctrl->flash_num_sources >= 2 ? 60 : 100;
+		flash_data.led_current_ma[1] = flash_data.led_current_ma[0];
+		rc = cam_flash_on(fctrl, &flash_data, 0);
+		break;
+	case 2:
+		flash_data.led_current_ma[0] = 1000;
+		flash_data.led_current_ma[1] = 1000;
+		rc = cam_flash_on(fctrl, &flash_data, 1);
+		break;
+	case 3:
+		flash_data.led_current_ma[0] = is_back_flash ? 50 : 150;
+		flash_data.led_current_ma[1] = flash_data.led_current_ma[0];
+		rc = cam_flash_on(fctrl, &flash_data, 0);
+		break;
+	default:
+		rc = -EINVAL;
+		break;
+	}
+	mutex_unlock(&fctrl->flash_mutex);
+
+	if (!rc)
+		pre_flash_mode = flash_mode;
+
+	return rc;
+}
+
+static ssize_t cam_flash_proc_write(struct file *filp,
+	const char __user *buf, size_t len, loff_t *ppos)
+{
+	char value[8] = {0};
+	unsigned int mode;
+	bool is_back_flash = true;
+
+	if (!len)
+		return -EINVAL;
+
+	if (len >= sizeof(value))
+		len = sizeof(value) - 1;
+
+	if (copy_from_user(value, buf, len))
+		return -EFAULT;
+
+	if (kstrtouint(value, 10, &mode))
+		return -EINVAL;
+
+	if ((mode == 20) || (mode == 23)) {
+		mode -= 20;
+		is_back_flash = false;
+	}
+
+	flash_mode = mode;
+	cam_flash_proc_on_off(is_back_flash);
+	return len;
+}
+
+static ssize_t cam_flash_proc_read(struct file *filp,
+	char __user *buf, size_t len, loff_t *ppos)
+{
+	char value[3] = {0};
+	int value_len;
+
+	value_len = scnprintf(value, sizeof(value), "%u", flash_mode);
+	return simple_read_from_buffer(buf, len, ppos, value, value_len);
+}
+
+static const struct file_operations cam_flash_proc_fops = {
+	.owner = THIS_MODULE,
+	.read = cam_flash_proc_read,
+	.write = cam_flash_proc_write,
+};
+
+static int cam_flash_proc_init(struct cam_flash_ctrl *fctrl)
+{
+	struct proc_dir_entry *entry;
+
+	entry = proc_create_data("qcom_flash", 0666, NULL,
+		&cam_flash_proc_fops, NULL);
+	if (!entry) {
+		CAM_ERR(CAM_FLASH, "Failed to create /proc/qcom_flash");
+		return -ENOMEM;
+	}
+
+	if (fctrl->soc_info.index < ARRAY_SIZE(vendor_flash_ctrl))
+		vendor_flash_ctrl[fctrl->soc_info.index] = fctrl;
+
+	return 0;
 }
 
 static int32_t cam_flash_init_default_params(struct cam_flash_ctrl *fctrl)
@@ -484,6 +616,7 @@ static int32_t cam_flash_platform_probe(struct platform_device *pdev)
 	mutex_init(&(fctrl->flash_mutex));
 
 	fctrl->flash_state = CAM_FLASH_STATE_INIT;
+	cam_flash_proc_init(fctrl);
 	CAM_DBG(CAM_FLASH, "Probe success");
 	return rc;
 
