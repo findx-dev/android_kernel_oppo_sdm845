@@ -44,7 +44,14 @@
 &snd_934x {
 	qcom,msm-mbhc-hs-mic-max-threshold-mv = <2600>;
 	qcom,msm-mbhc-hs-mic-min-threshold-mv = <75>;
+	qcom,msm-mbhc-usbc-audio-supported = <1>;
+	qcom,wsa-disable;
 	oppo,speaker-pa = "maxim";
+};
+
+&wcd_usbc_analog_en1_gpio {
+	pinctrl-0 = <&wcd_usbc_switch_en1_active>;
+	pinctrl-1 = <&wcd_usbc_switch_en1_idle>;
 };
 
 &wcd934x_cdc {
