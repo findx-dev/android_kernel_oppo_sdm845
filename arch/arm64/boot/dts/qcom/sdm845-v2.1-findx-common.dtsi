@@ -2065,3 +2065,17 @@
 &pmi8998_bob_ao {
 	regulator-max-microvolt = <3900000>;
 };
+
+/* Vibrator */
+&pmi8998_haptics {
+	qcom,drive-period-code-max-variation-pct = <5>;
+	qcom,drive-period-code-min-variation-pct = <5>;
+	qcom,play-mode = "buffer";
+	qcom,vmax-mv = <1950>;
+	qcom,wave-play-rate-us = <4255>;
+	qcom,brake-pattern = <03 03 03 03>;
+	qcom,wave-shape = "sine";
+	qcom,lra-high-z = "opt2";
+	qcom,lra-auto-res-mode = "zxd-eop";
+	qcom,lra-res-cal-period = <32>;
+};
