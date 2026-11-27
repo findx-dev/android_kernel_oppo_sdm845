@@ -6939,8 +6939,16 @@ static int tp_suspend(struct device *dev)
                     ts->ts_ops->enable_single_tap(ts->chip_data, false);
                 }
             }
-            ts->ts_ops->mode_switch(ts->chip_data, MODE_GESTURE, true);
-            goto EXIT;
+            ret = ts->ts_ops->mode_switch(ts->chip_data, MODE_GESTURE, true);
+            if (ret >= 0)
+                goto EXIT;
+            /*
+             * The IC did not accept gesture mode. Leaving it awake makes it
+             * lose its supplies with the panel and floods the bus with IRQs,
+             * so put it to sleep like when gestures are disabled.
+             */
+            TPD_INFO("%s: gesture mode failed, fall back to sleep\n", __func__);
+            goto SLEEP;
         }
     }
 
@@ -6956,6 +6964,7 @@ static int tp_suspend(struct device *dev)
         goto EXIT;
     }
 
+SLEEP:
     //step9:switch mode to sleep
     ret = ts->ts_ops->mode_switch(ts->chip_data, MODE_SLEEP, true);
     if (ret < 0) {
