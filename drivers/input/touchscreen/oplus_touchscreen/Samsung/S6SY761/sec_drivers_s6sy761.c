@@ -67,11 +67,12 @@ static int sec_enable_black_gesture(struct chip_data_s6sy761 *chip_info, bool en
 {
     int ret = -1;
     int i = 0;
+    const int retry = 20;
 
     TPD_INFO("%s, enable = %d\n", __func__, enable);
 
     if (enable) {
-        for (i = 0; i < 20; i++)
+        for (i = 0; i < retry; i++)
         {
             touch_i2c_write_word(chip_info->client, SEC_CMD_WAKEUP_GESTURE_MODE, 0xFF1F);
             touch_i2c_write_byte(chip_info->client, SEC_CMD_SET_POWER_MODE, 0x01);
@@ -85,7 +86,7 @@ static int sec_enable_black_gesture(struct chip_data_s6sy761 *chip_info, bool en
         return 0;
     }
 
-    if (i >= 5) {
+    if (i >= retry) {
         ret = -1;
         TPD_INFO("%s: enter black gesture failed\n", __func__);
     } else {
