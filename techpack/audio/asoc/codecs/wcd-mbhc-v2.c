@@ -33,6 +33,9 @@
 #include "wcd-mbhc-adc.h"
 #include "wcd-mbhc-v2-api.h"
 
+extern int fsa4480_enable_audio_switch(void);
+extern int fsa4480_disable_audio_switch(void);
+
 void wcd_mbhc_jack_report(struct wcd_mbhc *mbhc,
 			  struct snd_soc_jack *jack, int status, int mask)
 {
@@ -1476,6 +1479,7 @@ static int wcd_mbhc_usb_c_analog_setup_gpios(struct wcd_mbhc *mbhc,
 					     bool active)
 {
 	int rc = 0;
+	int jack_type;
 	struct usbc_ana_audio_config *config =
 		&mbhc->mbhc_cfg->usbc_analog_cfg;
 	union power_supply_propval pval;
@@ -1486,6 +1490,16 @@ static int wcd_mbhc_usb_c_analog_setup_gpios(struct wcd_mbhc *mbhc,
 	memset(&pval, 0, sizeof(pval));
 
 	if (active) {
+		jack_type = fsa4480_enable_audio_switch();
+		if (jack_type < 0) {
+			dev_warn(mbhc->codec->dev,
+				 "%s: no valid analog audio accessory: %d\n",
+				 __func__, jack_type);
+			fsa4480_disable_audio_switch();
+			mbhc->usbc_mode = POWER_SUPPLY_TYPEC_NONE;
+			return jack_type;
+		}
+
 		pval.intval = POWER_SUPPLY_TYPEC_PR_SOURCE;
 		if (power_supply_set_property(mbhc->usb_psy,
 				POWER_SUPPLY_PROP_TYPEC_POWER_ROLE, &pval))
@@ -1523,6 +1537,9 @@ static int wcd_mbhc_usb_c_analog_setup_gpios(struct wcd_mbhc *mbhc,
 		mbhc->usbc_mode = POWER_SUPPLY_TYPEC_NONE;
 		if (mbhc->mbhc_cfg->swap_gnd_mic)
 			mbhc->mbhc_cfg->swap_gnd_mic(mbhc->codec, false);
+
+		if (mbhc->mbhc_cfg->enable_usbc_analog)
+			fsa4480_disable_audio_switch();
 	}
 
 	return rc;

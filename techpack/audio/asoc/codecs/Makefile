@@ -25,6 +25,7 @@ obj-$(CONFIG_SND_SOC_WCD_MBHC)  += snd-soc-wcd-mbhc.o
 obj-$(CONFIG_SND_SOC_WSA881X)	+= snd-soc-wsa881x.o
 obj-$(CONFIG_SND_SOC_WCD_SPI)  += snd-soc-wcd-spi.o
 obj-$(CONFIG_SND_SOC_MAX98928)	+= max989xx/
+obj-$(CONFIG_SND_SOC_FSA4480)	+= fsa4480/
 
 snd-soc-msm-stub-objs := msm_stub.o
 obj-$(CONFIG_SND_SOC_MSM_STUB)  += snd-soc-msm-stub.o
