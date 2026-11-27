@@ -59,3 +59,27 @@
 &qupv3_se10_i2c {
     qcom,clk-freq-out = <100000>;
 };
+
+&power_gpio_high {
+	mux {
+		pins = "gpio16";
+	};
+
+	config {
+		pins = "gpio16";
+	};
+};
+
+&power_gpio_low {
+	mux {
+		pins = "gpio16";
+	};
+
+	config {
+		pins = "gpio16";
+	};
+};
+
+&proximity_power {
+	qcom,power_gpio = <&tlmm 16 0>;
+};
