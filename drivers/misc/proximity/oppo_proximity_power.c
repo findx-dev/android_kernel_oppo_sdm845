@@ -110,7 +110,7 @@ static int oppo_proximity_power_probe(struct platform_device *pdev)
 	if (ret)
 		return ret;
 
-	ret = proximity_power_set(chip, false);
+	ret = proximity_power_set(chip, true);
 	if (ret)
 		return ret;
 
